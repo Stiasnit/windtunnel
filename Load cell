@@ -1,64 +1,69 @@
+
 import RPi.GPIO as GPIO
 import time
 
 GPIO.setmode(GPIO.BCM)
 
-DT = 5 #Data pin goes to GPIO Pin 5
+DT = 5
 SCK = 6
 
-scale factor = 0.001 #abitrary scale factor that depends on calibration
+scale_factor = 0.001
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(DT, GPIO.IN)
 GPIO.setup(SCK, GPIO.OUT)
 
 def read_raw():
-  while GPIO.input(DT) == 1:
-    pass
-  count = 0
-  for i in range(24):
+    while GPIO.input(DT) ==1:
+        pass
+    
+    count = 0
+    for i in range(24):
+        GPIO.output(SCK, True)
+        count = count <<1
+        GPIO.output(SCK, False)
+        if GPIO.input(DT):
+            count += 1
+
     GPIO.output(SCK, True)
-    count = count <<1
     GPIO.output(SCK, False)
-    if GPIO.input(DT):
-      count += 1
-
-  GPIO.output(SCK, True)
-  GPIO.output(SCK, False)
-
-  if count & 0x800000:
-    count |= ~0xfffff
-
-  return count
+    
+    if count & 0x800000:
+        count |= ~0xfffff
+    
+    
+    return count
 
 def average_weight(samples=10):
-  total = 0
-  for _ in range(sample):
-    total += read_raw()
-    time.sleep(0.05)
-  return total // samples
-
-def tare(num_samples=10):
-  print("Taring, remove any external weight")
-  total = 0
-  for _ range(num_samples):
-    total += read_raw()
-    time.sleep(0.1)
-  offset = total // num_samples
-  print(f"Tare offset: (offset)"
-  return offset
-
-try:
-  offset = tare()
-  print("Starting Weight Readings")
-  while True:
-    raw = average_weight()
-    net = raw - offset
-    grams = net * scale factor
-    print(f"Weight: {grams :.2f} g"
-
-except KeyboardINteruppt, SystemExit):
-  print("Exiting")
-finally:
-  GPIO.cleanup()
+    total = 0
+    for _ in range(samples):
+        total += read_raw()
+        time.sleep(0.05)
+    return total // samples
     
+def tare(num_samples=10):
+    print("Taring, remove any external weight")
+    total = 0
+    for _ in range(num_samples):
+        total += read_raw()
+        time.sleep(0.1)
+    offset = total // num_samples
+    print(f"Tare offset: (offset)")
+    return offset
+    
+try:
+    offset = tare()
+    print("Starting Weight Readings")
+    while True:
+        raw = average_weight()
+        net = raw - offset
+        grams = net * scale_factor
+        print(f"Weight: {grams:.2f} g")
+        time.sleep(0.5)
+    
+    
+except (KeyboardInterrupt, SystemExit):
+    print("Exiting")
+finally:
+    GPIO.cleanup()
+        
