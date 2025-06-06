@@ -1,0 +1,178 @@
+from prometheus_client import start_http_server, Gauge
+import time
+import random
+import adafruit_bmp280
+import glob
+import spidev
+import os
+import board
+
+#Prometheus Gauges
+bmp_temp_gauge = Gauge('bmp280_temperature_celsius', 'BMP280 Temperature in Celsius')
+bmp_pressure_gauge = Gauge('bmp280_pressure_hpa', 'BMP280 Pressure in hPa')
+bmp_altitude_gauge = Gauge('bmp280_altitude', 'BMP280 Altitude in meters')
+
+object_temp_gauge = Gauge('object_temperature_celsius', 'Object Temperature in Celsius')
+
+object_pressure_gauge = Gauge('object_pressure_kpa', 'Pressure from Object in kPa')
+
+loadcell_gauge = Gauge('Load_cell_g', 'Mass of Object in grams')
+                
+#bmp280 code(air temperature and pressure sensor)
+try:
+    
+    i2c = board.I2C()
+    bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(i2c)
+    bmp280.sea_level_pressure
+    print("BMP280 Working")
+except Exception as e:
+    bmp280 = None
+    print(f"Failed to start BMP280: {e}")
+
+#temperature sensor code
+#removed because not used
+#Pressure sensor code
+V_REF = 5.0
+ADC_CHANNEL = 0
+MAX_ADC = 1023.0
+
+try:
+    spi = spidev.SpiDev()
+    spi.open(0, 0)
+    print("Pressure sensor working")
+except Exception as e:
+    spi = None
+    print(f"Failed to start pressure sensor: {e}")
+    
+def read_adc(channel):
+    if spi is None:
+        return None
+    adc = spi.xfer2([1, (8 + channel) << 4, 0])
+    data = ((adc[1] & 3) << 8) + adc[2]
+    return data
+
+def convert_to_voltage(adc_value):
+    return(adc_value / MAX_ADC) * V_REF
+
+def voltage_to_pressure(voltage):
+    pressure_kpa =(voltage - (V_REF /2))/(V_REF / 5)
+    return pressure_kpa
+    
+#Load cell code
+import RPi.GPIO as GPIO
+import time
+
+GPIO.setmode(GPIO.BCM)
+
+DT = 5
+SCK = 6
+def setup():
+      scale_factor = 0.001
+
+      GPIO.setmode(GPIO.BCM)
+      GPIO.setup(DT, GPIO.IN)
+      GPIO.setup(SCK, GPIO.OUT)
+      
+def read_raw():
+      try:
+            while GPIO.input(DT) ==1:
+                  pass
+    
+            count = 0
+            for i in range(24):
+                  GPIO.output(SCK, True)
+                  count = count <<1
+                  GPIO.output(SCK, False)
+                  if GPIO.input(DT):
+                        count += 1
+
+            GPIO.output(SCK, True)
+            GPIO.output(SCK, False)
+    
+            if count & 0x800000:
+                  count |= ~0xfffff
+    
+    
+            return count
+      except Exception as e:
+                  print(f"Failed to read hx711: {e}")
+                  return None
+      
+
+def average_weight(samples=10):
+    total = 0
+    for _ in range(samples):
+        total += read_raw()
+        time.sleep(0.05)
+    return total // samples
+    
+def tare(num_samples=10):
+    print("Taring, remove any external weight")
+    total = 0
+    for _ in range(num_samples):
+        total += read_raw()
+        time.sleep(0.1)
+    offset = total // num_samples
+    print(f"Tare offset: (offset)")
+    return offset
+    
+def main():
+      global tare_offset
+      
+      setup()
+      tare_offset = tare()
+ 
+                  
+if __name__ == '__main__':
+                  start_http_server(9200)
+                  print("Exporter running on http://localhost:9200/metrics")
+try:
+      while True:
+            try:
+                  bmp_temp = bmp280.temperature
+                  bmp_pressure = bmp.pressure
+                  bmp_altitude = bmp.altitude
+                  
+                  bmp_temp_gauge.set(bmp_temp)
+                  bmp_pressure_gauge(bmp_pressure)
+                  bmp_altitude_gauge(bmp_altitude)
+                  
+                  loadcell = read_raw()
+                  if loadcell is not None:
+                        weight = loadcell - tare_offset
+                        loadcell_gauge.set(loadcell)
+                        loadcell_gauge.set(weight)
+                  else:
+                        loadcell_gauge.set(0)
+                  time.sleep(1)
+                  
+                  object_temp = read_temp()
+                  if object_temp is not None:
+                        object_temp_gauge.set(object_temp)
+                  
+                  adc_value = read_channel(0)
+                  voltage = convert_to_voltage(adc_value)
+                  pressure = voltage_to_pressure(voltage)
+                  object_pressure_gauge.set(pressure)
+            except Exception as e:
+                  print(f"Failed to grab air temperaure and pressure: {e}")
+                  bmp_temp = None
+                  bmp_altitude = None
+                  bmp_pressure = None
+                  time.sleep(10)
+                  
+            #Debug prints   
+                  if bmp_temp is not None:
+                        print(f"BMP280: Temp={bmp_temp:.1f} C, Pressure: {bmp_pressure:.1f}hPa, Altitude={bmp_altitude:.2f} m")
+                        print(f"Object temperature: Objtemp={object_temp} C" if object_temp is not None else "Object temp: No reading")
+                        print(f"Pressure: Voltage={voltage:.2f} V, Pressure={pressure:.3f} kPa")
+                        print(f"Mass: Mass={weight:.2f}")
+                        print("---------")
+                        time.sleep(2)
+
+
+except KeyboardInterrupt:
+      if spi is not None:
+            spi.close()
+      GPIO.cleanup 
+      print("Exiting")
