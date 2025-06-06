@@ -1,0 +1,55 @@
+import RPi.GPIO as GPIO
+import time
+
+# GPIO pin setup
+FAN_POWER_PIN = 17   # GPIO pin for ON/OFF
+FAN_PWM_PIN = 18     # PWM-capable GPIO pin for speed control
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(FAN_POWER_PIN, GPIO.OUT)
+GPIO.setup(FAN_PWM_PIN, GPIO.OUT)
+
+# Setup PWM for speed control
+pwm = GPIO.PWM(FAN_PWM_PIN, 50)  # 50Hz frequency
+pwm.start(0)  # Start with fan off
+
+def set_fan(power_on, speed_percent):
+    """Control fan power and speed.
+    
+    power_on: True to turn ON, False to turn OFF.
+    speed_percent: 0 to 100 (duty cycle).
+    """
+    if power_on:
+        GPIO.output(FAN_POWER_PIN, GPIO.HIGH)
+        pwm.ChangeDutyCycle(speed_percent)
+    else:
+        GPIO.output(FAN_POWER_PIN, GPIO.LOW)
+        pwm.ChangeDutyCycle(0)
+
+def interactive_fan_control():
+    print("Fan Control Started")
+    print("Enter a fan speed (0–100), or 'q' to quit.")
+
+    try:
+        while True:
+            user_input = input("Speed (0–100) or 'q': ").strip().lower()
+
+            if user_input == 'q':
+                print("Exiting")
+                break
+            try:
+                speed = int(user_input)
+                if 0 <= speed <= 100:
+                    set_fan(True, speed)
+                else:
+                    print("Please enter a number between 0 and 100.")
+            except ValueError:
+                print("Invalid input. Enter a number or 'q'.")
+
+    finally:
+        print("Cleaning up")
+        pwm.stop()
+        GPIO.cleanup()
+
+# Run the interactive controller
+interactive_fan_control()
