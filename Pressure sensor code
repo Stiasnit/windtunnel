@@ -1,37 +1,39 @@
 import spidev
 import time
 
-# Constants
-V_REF = 5.0  # Supply voltage to the MPXV7002
-ADC_CHANNEL = 0  # MCP3008 channel connected to the sensor
-MAX_ADC = 1023.0  # 10-bit ADC
+V_REF = 3.3
+ADC_CHANNEL = 0
+MAX_ADC = 1023.0
 
-# SPI initialization for MCP3008
 spi = spidev.SpiDev()
-spi.open(0, 0)  # (bus, device)
+spi.open(0, 0)
+spi.max_speed_hz = 1350000
 
 def read_adc(channel):
-    # Read SPI data from MCP3008 (3 bytes)
     adc = spi.xfer2([1, (8 + channel) << 4, 0])
     data = ((adc[1] & 3) << 8) + adc[2]
     return data
 
 def convert_to_voltage(adc_value):
-    return (adc_value / MAX_ADC) * V_REF
+    return(adc_value / MAX_ADC) * V_REF
 
 def voltage_to_pressure(voltage):
-    # From datasheet: Vout = Vs/5 * Pressure(kPa) + Vs/2
-    # Rearranged: Pressure = (Vout - Vs/2) / (Vs/5)
-    pressure_kpa = (voltage - (V_REF / 2)) / (V_REF / 5)
-    return pressure_kpa  # kPa, range: -2 to +2 kPa
+    pressure_kpa = ((voltage / V_REF) - 0.5 ) * 5 +2.5
+    return pressure_kpa
+import math
+def pressure_to_speed(pressure_kpa, rho=1.225):
+    if pressure_kpa < 0:
+        return 0
+    return math.sqrt(2 * pressure_kpa / rho)
 
 try:
     while True:
         adc_value = read_adc(ADC_CHANNEL)
         voltage = convert_to_voltage(adc_value)
         pressure = voltage_to_pressure(voltage)
-        print(f"ADC: {adc_value} | Voltage: {voltage:.2f} V | Pressure: {pressure:.2f} kPa")
+        air_speed = pressure_to_speed(pressure)
+        print(f"Voltage: {voltage: .2f} V | Pressure : {pressure: .3f} kPa| Air speed: {air_speed: .5f} m/s")
         time.sleep(1)
-
+        
 except KeyboardInterrupt:
     spi.close()
